@@ -19,3 +19,7 @@ venv.bak/
 # System files
 .DS_Store
 Thumbs.db
+
+# Custom files
+logs
+/data/images

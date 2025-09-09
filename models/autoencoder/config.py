@@ -61,6 +61,7 @@ class EarlyStopping:
         self.best_epoch = 0
         
     def __call__(self, val_loss, epoch):
+        print(f"DEBUG: EarlyStopping - Current val_loss: {val_loss:.6f}, Best loss: {self.best_loss:.6f}")
         if val_loss < self.best_loss - self.min_delta:
             if self.verbose:
                 improvement = self.best_loss - val_loss
@@ -68,15 +69,18 @@ class EarlyStopping:
             self.best_loss = val_loss
             self.counter = 0
             self.best_epoch = epoch
+            print(f"DEBUG: EarlyStopping - Loss improved, counter reset to {self.counter}")
             return True  # Model improved
         else:
             self.counter += 1
             if self.verbose:
                 print(f"Early stopping counter: {self.counter}/{self.patience}")
+            print(f"DEBUG: EarlyStopping - No improvement, counter increased to {self.counter}/{self.patience}")
             if self.counter >= self.patience:
                 self.early_stop = True
                 if self.verbose:
                     print(f"Early stopping triggered. Best epoch was {self.best_epoch}.")
+                print(f"DEBUG: EarlyStopping - Patience exceeded, early_stop set to {self.early_stop}")
             return False  # Model didn't improve
 
 
@@ -94,61 +98,82 @@ class CheckpointHandler:
 
     def save(self, model, optimizer, scheduler, epoch, train_losses, val_losses, is_best=False):
         """Save model checkpoint and training metadata"""
-        # Save model checkpoint
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
-            'train_losses': train_losses,
-            'val_losses': val_losses
-        }
-        
-        # Always save latest checkpoint
-        torch.save(checkpoint, self.checkpoint_path)
-        
-        # Save best model separately if this is the best model
-        if is_best:
-            torch.save(model.state_dict(), self.best_model_path)
-            print(f"Saved best model to {self.best_model_path}")
+        try:
+            print(f"DEBUG: CheckpointHandler - Saving checkpoint for epoch {epoch}")
+            # Save model checkpoint
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                'train_losses': train_losses,
+                'val_losses': val_losses
+            }
+            
+            # Always save latest checkpoint
+            torch.save(checkpoint, self.checkpoint_path)
+            print(f"DEBUG: CheckpointHandler - Saved checkpoint to {self.checkpoint_path}")
+            
+            # Save best model separately if this is the best model
+            if is_best:
+                torch.save(model.state_dict(), self.best_model_path)
+                print(f"Saved best model to {self.best_model_path}")
 
-        # Save metadata
-        metadata = {
-            'last_epoch': epoch,
-            'train_losses': train_losses,
-            'val_losses': val_losses,
-            'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        with open(self.metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=4)
+            # Save metadata
+            metadata = {
+                'last_epoch': epoch,
+                'train_losses': train_losses,
+                'val_losses': val_losses,
+                'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            with open(self.metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=4)
+            print(f"DEBUG: CheckpointHandler - Saved metadata to {self.metadata_path}")
+            return True
+        except Exception as e:
+            print(f"DEBUG: CheckpointHandler - Error saving checkpoint: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def load(self, model, optimizer=None, scheduler=None, device=None):
         """Load model checkpoint and return training metadata"""
-        if not self.checkpoint_path.exists():
-            print(f"No checkpoint found at {self.checkpoint_path}")
+        try:
+            print(f"DEBUG: CheckpointHandler - Attempting to load checkpoint from {self.checkpoint_path}")
+            if not self.checkpoint_path.exists():
+                print(f"No checkpoint found at {self.checkpoint_path}")
+                return None
+
+            if device is None:
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                
+            # Load checkpoint
+            print(f"DEBUG: CheckpointHandler - Loading checkpoint file")
+            checkpoint = torch.load(self.checkpoint_path, map_location=device)
+            
+            # Load model state
+            print(f"DEBUG: CheckpointHandler - Loading model state")
+            model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # Optionally load optimizer and scheduler states
+            if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+                print(f"DEBUG: CheckpointHandler - Loading optimizer state")
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                
+            if scheduler is not None and checkpoint['scheduler_state_dict'] is not None:
+                print(f"DEBUG: CheckpointHandler - Loading scheduler state")
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+            print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
+            
+            return {
+                'epoch': checkpoint['epoch'],
+                'train_losses': checkpoint['train_losses'],
+                'val_losses': checkpoint['val_losses']
+            }
+        except Exception as e:
+            print(f"DEBUG: CheckpointHandler - Error loading checkpoint: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
-
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            
-        # Load checkpoint
-        checkpoint = torch.load(self.checkpoint_path, map_location=device)
-        
-        # Load model state
-        model.load_state_dict(checkpoint['model_state_dict'])
-        
-        # Optionally load optimizer and scheduler states
-        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            
-        if scheduler is not None and checkpoint['scheduler_state_dict'] is not None:
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-        print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
-        
-        return {
-            'epoch': checkpoint['epoch'],
-            'train_losses': checkpoint['train_losses'],
-            'val_losses': checkpoint['val_losses']
-        }
 

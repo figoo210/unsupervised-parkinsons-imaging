@@ -10,6 +10,7 @@ import time
 from models.autoencoder.config import TrainingConfig, EarlyStopping, CheckpointHandler
 from models.autoencoder.scheduler import create_scheduler
 from models.autoencoder.optimizer import create_optimizer
+from utils.config_helpers import print_memory_stats
 
 
 def train_autoencoder(model, train_loader, val_loader, config=None):

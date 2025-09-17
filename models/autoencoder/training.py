@@ -53,8 +53,8 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
     # Training loop
     try:
         print("DEBUG: Starting training loop")
-        # Create progress bar for total training
-        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0)
+        # Create progress bar for total training - single line display
+        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0, bar_format='{l_bar}{bar:30}{r_bar}')
         total_pbar.update(start_epoch * len(train_loader))
         
         for epoch in range(start_epoch, config.epochs):
@@ -65,10 +65,12 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                 epoch_loss = 0
                 optimizer.zero_grad()  # Zero gradients at epoch start
 
+                # Compact epoch progress bar
                 train_pbar = tqdm(train_loader, 
-                                desc=f'Epoch {epoch+1}/{config.epochs} [Train]',
+                                desc=f'E{epoch+1}/{config.epochs}|Train',
                                 leave=False, 
-                                position=1)
+                                position=1,
+                                bar_format='{l_bar}{bar:10}{r_bar}')
 
                 for batch_idx, batch in enumerate(train_pbar):
                     try:
@@ -101,8 +103,8 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                         batch_loss = loss.item() * config.accumulation_steps
                         epoch_loss += batch_loss
                         
-                        # Update progress bars
-                        train_pbar.set_postfix({'loss': f"{batch_loss:.6f}"})
+                        # Update progress bars with concise format
+                        train_pbar.set_postfix_str(f"loss={batch_loss:.6f}")
                         total_pbar.update(1)
 
                         # Memory cleanup
@@ -119,6 +121,9 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                         print(f"DEBUG: Error in batch {batch_idx}: {str(e)}")
                         raise e
 
+                # Close training progress bar
+                train_pbar.close()
+                
                 # Calculate average training loss
                 avg_train_loss = epoch_loss / len(train_loader)
                 train_losses.append(avg_train_loss)
@@ -127,10 +132,12 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                 model.eval()
                 val_loss = 0
                 
+                # Compact validation progress bar
                 val_pbar = tqdm(val_loader, 
-                              desc=f'Epoch {epoch+1}/{config.epochs} [Val]',
+                              desc=f'E{epoch+1}/{config.epochs}|Val',
                               leave=False,
-                              position=1)
+                              position=1,
+                              bar_format='{l_bar}{bar:10}{r_bar}')
 
                 with torch.no_grad():
                     for batch in val_pbar:
@@ -140,7 +147,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                             loss = criterion(reconstructed, volumes)
                             val_loss += loss.item()
                             
-                            val_pbar.set_postfix({'loss': f"{loss.item():.6f}"})
+                            val_pbar.set_postfix_str(f"loss={loss.item():.6f}")
 
                             # Memory cleanup
                             del volumes, reconstructed, loss
@@ -154,6 +161,9 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                                 continue
                             print(f"DEBUG: Error in validation batch: {str(e)}")
                             raise e
+
+                # Close validation progress bar
+                val_pbar.close()
 
                 # Calculate average validation loss
                 avg_val_loss = val_loss / len(val_loader)
@@ -170,6 +180,12 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                 print(f"DEBUG: Error during epoch {epoch+1}: {str(e)}")
                 import traceback
                 traceback.print_exc()
+                
+                # Make sure to close progress bars in case of exception
+                if 'train_pbar' in locals():
+                    train_pbar.close()
+                if 'val_pbar' in locals():
+                    val_pbar.close()
 
             # Outside of the try block for each epoch
             try:
@@ -186,10 +202,8 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                 time_per_epoch = elapsed_time / (epoch - start_epoch + 1) if epoch >= start_epoch else 0
                 est_time_left = time_per_epoch * (config.epochs - epoch - 1)
                 
-                print(f"\nEpoch {epoch+1}/{config.epochs} completed in {time_per_epoch:.2f}s")
-                print(f"Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f}")
-                print(f"Learning rate: {optimizer.param_groups[0]['lr']:.8f}")
-                print(f"Est. time remaining: {est_time_left/60:.2f} minutes")
+                # Single line epoch summary
+                print(f"Epoch {epoch+1}/{config.epochs} | Train: {avg_train_loss:.6f} | Val: {avg_val_loss:.6f} | LR: {optimizer.param_groups[0]['lr']:.8f} | ETA: {est_time_left/60:.2f}m")
                 
                 try:
                     print("DEBUG: About to call print_memory_stats()")

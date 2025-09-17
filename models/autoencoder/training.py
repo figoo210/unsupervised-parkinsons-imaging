@@ -12,9 +12,22 @@ from models.autoencoder.scheduler import create_scheduler
 from models.autoencoder.optimizer import create_optimizer
 from utils.config_helpers import print_memory_stats
 
+# Progress bar display options:
+# If you're getting duplicate progress bar output or too much output,
+# you can pass disable_epoch_bars=True when calling train_autoencoder() 
+# to only show the total progress bar and not the per-epoch bars.
 
-def train_autoencoder(model, train_loader, val_loader, config=None):
-    """Optimized training loop with GPU memory management and progress tracking"""
+
+def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoch_bars=True):
+    """Optimized training loop with GPU memory management and progress tracking
+    
+    Args:
+        model: The autoencoder model to train
+        train_loader: DataLoader for training data
+        val_loader: DataLoader for validation data
+        config: Training configuration
+        disable_epoch_bars: If True, only show the total progress bar, not per-epoch bars
+    """
     if config is None:
         config = TrainingConfig()
 
@@ -54,7 +67,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
     try:
         print("DEBUG: Starting training loop")
         # Create progress bar for total training - single line display
-        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0, bar_format='{l_bar}{bar:30}{r_bar}')
+        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0, bar_format='{l_bar}{bar:30}{r_bar}', dynamic_ncols=True)
         total_pbar.update(start_epoch * len(train_loader))
         
         for epoch in range(start_epoch, config.epochs):
@@ -65,12 +78,18 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                 epoch_loss = 0
                 optimizer.zero_grad()  # Zero gradients at epoch start
 
-                # Compact epoch progress bar
+                # Update total progress bar to show current phase
+                total_pbar.set_description(f"Progress [E{epoch+1}/{config.epochs}|Train]")
+                
+                # Compact epoch progress bar - can be disabled if too verbose
                 train_pbar = tqdm(train_loader, 
                                 desc=f'E{epoch+1}/{config.epochs}|Train',
                                 leave=False, 
                                 position=1,
-                                bar_format='{l_bar}{bar:10}{r_bar}')
+                                bar_format='{l_bar}{bar:10}{r_bar}',
+                                dynamic_ncols=True,
+                                mininterval=1.0,  # Update at most once per second
+                                disable=disable_epoch_bars)
 
                 for batch_idx, batch in enumerate(train_pbar):
                     try:
@@ -103,8 +122,9 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                         batch_loss = loss.item() * config.accumulation_steps
                         epoch_loss += batch_loss
                         
-                        # Update progress bars with concise format
-                        train_pbar.set_postfix_str(f"loss={batch_loss:.6f}")
+                        # Update progress bars with concise format - only update display when needed
+                        if batch_idx % 5 == 0 or batch_idx == len(train_loader) - 1:  # Update less frequently
+                            train_pbar.set_postfix_str(f"loss={batch_loss:.6f}")
                         total_pbar.update(1)
 
                         # Memory cleanup
@@ -132,12 +152,18 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                 model.eval()
                 val_loss = 0
                 
-                # Compact validation progress bar
+                # Update total progress bar to show current phase
+                total_pbar.set_description(f"Progress [E{epoch+1}/{config.epochs}|Val]")
+                
+                # Compact validation progress bar - can be disabled if too verbose
                 val_pbar = tqdm(val_loader, 
                               desc=f'E{epoch+1}/{config.epochs}|Val',
                               leave=False,
                               position=1,
-                              bar_format='{l_bar}{bar:10}{r_bar}')
+                              bar_format='{l_bar}{bar:10}{r_bar}',
+                              dynamic_ncols=True,
+                              mininterval=1.0,  # Update at most once per second
+                              disable=disable_epoch_bars)
 
                 with torch.no_grad():
                     for batch in val_pbar:
@@ -147,7 +173,10 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                             loss = criterion(reconstructed, volumes)
                             val_loss += loss.item()
                             
-                            val_pbar.set_postfix_str(f"loss={loss.item():.6f}")
+                            # Update validation progress less frequently
+                            # Use a counter instead of trying to extract batch index
+                            if val_pbar.n % 5 == 0:
+                                val_pbar.set_postfix_str(f"loss={loss.item():.6f}")
 
                             # Memory cleanup
                             del volumes, reconstructed, loss

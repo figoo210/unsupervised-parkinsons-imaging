@@ -2,6 +2,7 @@ import os
 import json
 import time
 from pathlib import Path
+import torch
 import torch.optim as optim
 import torch.cuda.amp as amp
 
@@ -47,6 +48,72 @@ class TrainingConfig:
         print(f"Dataloader workers: {self.num_workers}")
         print(f"Checkpoints saved to: {self.checkpoint_dir}")
         print(f"{'='*50}\n")
+        
+    @classmethod
+    def quick_test(cls, latent_dim=256):
+        """Quick testing configuration with minimal epochs and small batch size
+        
+        Args:
+            latent_dim: Dimension of the latent space
+            
+        Returns:
+            TrainingConfig: Configuration optimized for quick testing
+        """
+        return cls(
+            latent_dim=latent_dim,
+            batch_size=2,
+            accumulation_steps=2,  # Effective batch size = 4
+            learning_rate=1e-4,
+            epochs=5,
+            early_stopping_patience=2,
+            use_mixed_precision=True,
+            num_workers=2,
+            model_name=f"autoencoder_test_ld{latent_dim}"
+        )
+    
+    @classmethod
+    def full_training(cls, latent_dim=256):
+        """Full training configuration with optimal parameters for production model
+        
+        Args:
+            latent_dim: Dimension of the latent space
+            
+        Returns:
+            TrainingConfig: Configuration optimized for full training
+        """
+        return cls(
+            latent_dim=latent_dim,
+            batch_size=8,
+            accumulation_steps=8,  # Effective batch size = 64
+            learning_rate=1e-4,
+            epochs=200,
+            early_stopping_patience=15,
+            use_mixed_precision=True,
+            num_workers=4,
+            model_name=f"autoencoder_full_ld{latent_dim}"
+        )
+        
+    @classmethod
+    def medium_training(cls, latent_dim=256):
+        """Medium training configuration balancing speed and quality
+        
+        Args:
+            latent_dim: Dimension of the latent space
+            
+        Returns:
+            TrainingConfig: Configuration optimized for medium training
+        """
+        return cls(
+            latent_dim=latent_dim,
+            batch_size=4,
+            accumulation_steps=4,  # Effective batch size = 16
+            learning_rate=1e-4,
+            epochs=50,
+            early_stopping_patience=10,
+            use_mixed_precision=True,
+            num_workers=2,
+            model_name=f"autoencoder_medium_ld{latent_dim}"
+        )
 
 
 class EarlyStopping:

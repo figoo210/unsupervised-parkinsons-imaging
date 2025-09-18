@@ -170,11 +170,20 @@ class GroupedLatentDecoder(nn.Module):
         self.final_conv = nn.Conv3d(4, output_channels, kernel_size=1)
 
     def forward(self, x):
-        # Get batch size
+        # Get batch size and shape
         batch_size = x.size(0)
         
-        # Reshape to (batch_size, latent_dim, 1, 1, 1)
-        x = x.view(batch_size, self.latent_dim, 1, 1, 1)
+        # Check if input is already in 5D format or needs flattening
+        if len(x.shape) == 5:  # Already in format [B, C, D, H, W]
+            # Just ensure the channel dimension is correct
+            if x.size(1) != self.latent_dim:
+                raise ValueError(f"Expected {self.latent_dim} channels in input, got {x.size(1)}")
+            
+            # Flatten spatial dimensions
+            x = x.flatten(2).mean(dim=2).view(batch_size, self.latent_dim, 1, 1, 1)
+        else:
+            # Reshape to (batch_size, latent_dim, 1, 1, 1)
+            x = x.view(batch_size, self.latent_dim, 1, 1, 1)
         
         # Upsample to initial shape
         x = self.reshape_upsample(x)

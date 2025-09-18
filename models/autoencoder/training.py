@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.cuda.amp as amp
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 import gc
@@ -67,7 +67,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
     try:
         print("DEBUG: Starting training loop")
         # Create progress bar for total training - single line display
-        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0, bar_format='{l_bar}{bar:30}{r_bar}', dynamic_ncols=True)
+        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0, leave=True, dynamic_ncols=True)
         total_pbar.update(start_epoch * len(train_loader))
         
         for epoch in range(start_epoch, config.epochs):
@@ -86,7 +86,6 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                                 desc=f'E{epoch+1}/{config.epochs}|Train',
                                 leave=False, 
                                 position=1,
-                                bar_format='{l_bar}{bar:10}{r_bar}',
                                 dynamic_ncols=True,
                                 mininterval=1.0,  # Update at most once per second
                                 disable=disable_epoch_bars)
@@ -124,7 +123,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                         
                         # Update progress bars with concise format - only update display when needed
                         if batch_idx % 5 == 0 or batch_idx == len(train_loader) - 1:  # Update less frequently
-                            train_pbar.set_postfix_str(f"loss={batch_loss:.6f}")
+                            train_pbar.set_postfix(loss=f"{batch_loss:.6f}")
                         total_pbar.update(1)
 
                         # Memory cleanup
@@ -160,7 +159,6 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                               desc=f'E{epoch+1}/{config.epochs}|Val',
                               leave=False,
                               position=1,
-                              bar_format='{l_bar}{bar:10}{r_bar}',
                               dynamic_ncols=True,
                               mininterval=1.0,  # Update at most once per second
                               disable=disable_epoch_bars)
@@ -176,7 +174,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                             # Update validation progress less frequently
                             # Use a counter instead of trying to extract batch index
                             if val_pbar.n % 5 == 0:
-                                val_pbar.set_postfix_str(f"loss={loss.item():.6f}")
+                                val_pbar.set_postfix(loss=f"{loss.item():.6f}")
 
                             # Memory cleanup
                             del volumes, reconstructed, loss

@@ -1,7 +1,7 @@
 import os
 import torch
 import torch.nn as nn
-import torch.cuda.amp as amp
+from torch import amp
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,7 +43,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
     checkpoint_handler = CheckpointHandler(config.checkpoint_dir, config.model_name)
 
     # Mixed precision setup
-    scaler = amp.GradScaler(enabled=config.use_mixed_precision)
+    scaler = amp.GradScaler('cuda', enabled=config.use_mixed_precision)
 
     # Training tracking variables
     train_losses = []
@@ -97,7 +97,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                         volumes = batch['volume'].to(device, non_blocking=True)
                         
                         # Mixed precision forward pass
-                        with amp.autocast(enabled=config.use_mixed_precision):
+                        with amp.autocast('cuda', enabled=config.use_mixed_precision):
                             reconstructed = model(volumes)
                             loss = criterion(reconstructed, volumes)
                             # Scale loss by accumulation steps

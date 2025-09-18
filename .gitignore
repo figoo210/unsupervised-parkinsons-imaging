@@ -25,4 +25,6 @@ logs
 /data/images
 /data/Images
 commands.txt
-checkpoints
+checkpoints/
+output/Experiments/
+output/Validated/

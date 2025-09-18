@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
@@ -9,6 +10,7 @@ import seaborn as sns
 from tqdm import tqdm
 
 from models.autoencoder.model import BaseAutoencoder
+from models.autoencoder.visualization import visualize_latent_dimension
 
 
 def load_trained_model(checkpoint_dir, model_name, latent_dim=256):

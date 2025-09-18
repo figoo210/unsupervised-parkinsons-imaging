@@ -83,7 +83,7 @@ def run_architecture_experiment(train_loader, val_loader, output_dir, epochs, de
     logger.info("Running architecture comparison experiment...")
     
     # Define model variants to test
-    variants = ["direct", "light", "grouped", "efficient"]
+    variants = ["direct", "light", "grouped", "efficient", "optimized", "grouped_latent"]
     
     # Create output directory
     output_dir = Path(output_dir) / "Architecture"

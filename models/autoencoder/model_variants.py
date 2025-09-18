@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 from models.autoencoder.direct_ae import ConvBlock, DirectAutoencoder
+from models.autoencoder.optimized_ae import OptimizedAutoencoder, GroupedConvAutoencoder as GroupedLatentAutoencoder
 
 class LightAutoencoder(nn.Module):
     """
@@ -263,7 +264,9 @@ def get_model_variant(variant_name, **kwargs):
         "direct": DirectAutoencoder,
         "light": LightAutoencoder,
         "grouped": GroupedConvAutoencoder,
-        "efficient": EfficientAutoencoder
+        "efficient": EfficientAutoencoder,
+        "optimized": OptimizedAutoencoder,
+        "grouped_latent": GroupedLatentAutoencoder
     }
     
     if variant_name not in variants:

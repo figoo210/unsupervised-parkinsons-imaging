@@ -60,8 +60,8 @@ class OptimizedEncoder(nn.Module):
         # Fourth downsampling block
         self.down4 = nn.Sequential(
             OptimizedConvBlock(8, 64, stride=2),                   # -> (64, 4, 8, 8)
-            OptimizedConvBlock(64, 64),                            # -> (64, 4, 8, 8)
-            ChannelReductionBlock(64)                              # -> (16, 4, 8, 8)
+            OptimizedConvBlock(64, 512),                           # -> (512, 4, 8, 8)
+            # No channel reduction to maintain 512 channels for latent space
         )
 
     def forward(self, x):
@@ -78,36 +78,36 @@ class LatentSpaceDecoder(nn.Module):
     → Conv3D(Nlat-space, Nlat-space, (Nx, Ny, Nz), groups = Nlat-space) 
     → Conv3D(Nlat-space, Nchan, 1) → Activation
     """
-    def __init__(self, latent_dim=16, output_channels=1):
+    def __init__(self, latent_dim=512, output_channels=1):
         super().__init__()
         self.latent_dim = latent_dim
         
         # Upsampling path
         self.up1 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(latent_dim, 32),
-            OptimizedConvBlock(32, 32),
-            ChannelReductionBlock(32)  # -> 8 channels
+            OptimizedConvBlock(latent_dim, 128),
+            OptimizedConvBlock(128, 64),
+            ChannelReductionBlock(64)  # -> 16 channels
         )
         
         self.up2 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(8, 16),
-            OptimizedConvBlock(16, 16),
-            ChannelReductionBlock(16)  # -> 4 channels
+            OptimizedConvBlock(16, 32),
+            OptimizedConvBlock(32, 32),
+            ChannelReductionBlock(32)  # -> 8 channels
         )
         
         self.up3 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(4, 8),
-            OptimizedConvBlock(8, 8),
-            ChannelReductionBlock(8)   # -> 2 channels
+            OptimizedConvBlock(8, 16),
+            OptimizedConvBlock(16, 16),
+            ChannelReductionBlock(16)   # -> 4 channels
         )
         
         self.up4 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(2, 4),
-            OptimizedConvBlock(4, 4)   # Keep at 4 channels before final conv
+            OptimizedConvBlock(4, 8),
+            OptimizedConvBlock(8, 4)   # Keep at 4 channels before final conv
         )
         
         # Final convolution
@@ -125,8 +125,11 @@ class GroupedLatentDecoder(nn.Module):
     """
     Decoder that implements the specific bottleneck architecture with grouped convolutions
     as described in the optimization request.
+    
+    The grouped convolution uses a 4x8x8 kernel size with padding='same' to learn the
+    "base image" from the latent space, which helps recover spatial patterns more effectively.
     """
-    def __init__(self, latent_dim=16, output_shape=(64, 128, 128), output_channels=1):
+    def __init__(self, latent_dim=512, output_shape=(64, 128, 128), output_channels=1):
         super().__init__()
         self.latent_dim = latent_dim
         self.output_shape = output_shape
@@ -137,15 +140,16 @@ class GroupedLatentDecoder(nn.Module):
         # Reshape and upsample to initial shape
         self.reshape_upsample = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
         
-        # Grouped convolution (each channel gets its own filter)
+        # Grouped convolution with 4x8x8 kernel to learn the "base image"
+        # Each channel gets its own filter that spans the entire initial volume
         self.grouped_conv = nn.Conv3d(
             latent_dim, latent_dim, 
-            kernel_size=3, padding=1,
+            kernel_size=(4, 8, 8), padding='same',
             groups=latent_dim  # Each channel processed independently
         )
         
         # 1x1 convolution to mix channels
-        self.channel_mixer = nn.Conv3d(latent_dim, 16, kernel_size=1)
+        self.channel_mixer = nn.Conv3d(latent_dim, 32, kernel_size=1)
         
         # Activation
         self.activation = nn.ReLU(inplace=True)
@@ -153,17 +157,17 @@ class GroupedLatentDecoder(nn.Module):
         # Remaining upsampling path
         self.up1 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(16, 8)
+            OptimizedConvBlock(32, 16)
         )
         
         self.up2 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(8, 4)
+            OptimizedConvBlock(16, 8)
         )
         
         self.up3 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(4, 4)
+            OptimizedConvBlock(8, 4)
         )
         
         # Final convolution
@@ -215,7 +219,7 @@ class OptimizedAutoencoder(nn.Module):
     def __init__(self, initial_filters=4):
         super().__init__()
         self.encoder = OptimizedEncoder(initial_filters=initial_filters)
-        self.decoder = LatentSpaceDecoder(latent_dim=16)  # 16 is output from encoder's down4
+        self.decoder = LatentSpaceDecoder(latent_dim=512)  # 512 is output from encoder's down4
         
     def forward(self, x):
         encoded = self.encoder(x)
@@ -226,11 +230,14 @@ class GroupedConvAutoencoder(nn.Module):
     """
     Autoencoder with optimized encoder and the specific grouped convolution decoder
     as described in the optimization request.
+    
+    Uses a larger latent dimension (512) to provide sufficient capacity for learning
+    complex spatial patterns in the data.
     """
     def __init__(self, initial_filters=4, output_shape=(64, 128, 128)):
         super().__init__()
         self.encoder = OptimizedEncoder(initial_filters=initial_filters)
-        self.decoder = GroupedLatentDecoder(latent_dim=16, output_shape=output_shape)
+        self.decoder = GroupedLatentDecoder(latent_dim=512, output_shape=output_shape)
         
     def forward(self, x):
         encoded = self.encoder(x)

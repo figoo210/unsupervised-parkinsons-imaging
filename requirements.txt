@@ -16,3 +16,4 @@ scipy
 umap-learn
 ipywidgets
 thop
+torchsummary

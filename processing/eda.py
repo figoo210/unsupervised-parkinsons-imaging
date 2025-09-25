@@ -19,7 +19,7 @@ def create_memory_efficient_dataloaders(df, batch_size=2, train_split=0.8, mask_
         df,
         batch_size=batch_size,
         train_split=train_split,
-        on_demand=True,
+        on_demand=False,
         mask_path=mask_path
     )
 

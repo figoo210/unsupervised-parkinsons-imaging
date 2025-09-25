@@ -70,7 +70,7 @@ def prepare_data(data_dir, mask_path, batch_size):
     # Create dataloaders
     train_loader, val_loader = create_dataloaders(
         df, batch_size=batch_size, train_split=0.8, 
-        on_demand=True, mask_path=mask_path
+        on_demand=False, mask_path=mask_path
     )
     
     logger.info(f"Data preparation complete. Train: {len(train_loader.dataset)}, "

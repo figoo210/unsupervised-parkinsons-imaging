@@ -18,7 +18,7 @@ from utils.config_helpers import print_memory_stats
 # to only show the total progress bar and not the per-epoch bars.
 
 
-def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoch_bars=True):
+def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoch_bars=True, criterion=None):
     """Optimized training loop with GPU memory management and progress tracking
     
     Args:
@@ -36,7 +36,8 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
     model = model.to(device)
 
     # Initialize components
-    criterion = nn.MSELoss()
+    if criterion is None:
+        criterion = nn.MSELoss()
     optimizer = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config)
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
@@ -71,6 +72,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
         total_pbar.update(start_epoch * len(train_loader))
         
         for epoch in range(start_epoch, config.epochs):
+            is_best = False
             try:
                 print(f"DEBUG: Starting epoch {epoch+1}/{config.epochs}")
                 # Training phase

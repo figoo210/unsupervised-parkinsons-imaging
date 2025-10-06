@@ -45,22 +45,22 @@ class OptimizedEncoder(nn.Module):
         
         # Second downsampling block
         self.down2 = nn.Sequential(
-            OptimizedConvBlock(8, 16, stride=2),                   # -> (16, 16, 32, 32)
-            OptimizedConvBlock(16, 16),                            # -> (16, 16, 32, 32)
-            ChannelReductionBlock(16)                              # -> (4, 16, 32, 32)
+            OptimizedConvBlock(8, 32, stride=2),                   # -> (16, 16, 32, 32)
+            OptimizedConvBlock(32, 32),                            # -> (16, 16, 32, 32)
+            ChannelReductionBlock(32)                              # -> (8, 16, 32, 32)
         )
         
         # Third downsampling block
         self.down3 = nn.Sequential(
-            OptimizedConvBlock(4, 32, stride=2),                   # -> (32, 8, 16, 16)
-            OptimizedConvBlock(32, 32),                            # -> (32, 8, 16, 16)
-            ChannelReductionBlock(32)                              # -> (8, 8, 16, 16)
+            OptimizedConvBlock(8, 64, stride=2),                   # -> (32, 8, 16, 16)
+            OptimizedConvBlock(64, 64),                            # -> (32, 8, 16, 16)
+            ChannelReductionBlock(64)                              # -> (8, 8, 16, 16)
         )
         
         # Fourth downsampling block
         self.down4 = nn.Sequential(
-            OptimizedConvBlock(8, 64, stride=2),                   # -> (64, 4, 8, 8)
-            OptimizedConvBlock(64, 512),                           # -> (512, 4, 8, 8)
+            OptimizedConvBlock(16, 128, stride=2),                   # -> (64, 4, 8, 8)
+            OptimizedConvBlock(128, 128),                           # -> (512, 4, 8, 8)
             # No channel reduction to maintain 512 channels for latent space
         )
 
@@ -78,7 +78,7 @@ class LatentSpaceDecoder(nn.Module):
     → Conv3D(Nlat-space, Nlat-space, (Nx, Ny, Nz), groups = Nlat-space) 
     → Conv3D(Nlat-space, Nchan, 1) → Activation
     """
-    def __init__(self, latent_dim=512, output_channels=1):
+    def __init__(self, latent_dim=128, output_channels=1):
         super().__init__()
         self.latent_dim = latent_dim
         
@@ -87,27 +87,27 @@ class LatentSpaceDecoder(nn.Module):
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
             OptimizedConvBlock(latent_dim, 128),
             OptimizedConvBlock(128, 64),
-            ChannelReductionBlock(64)  # -> 16 channels
+     #       ChannelReductionBlock(64)  # -> 16 channels
         )
         
         self.up2 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(16, 32),
+            OptimizedConvBlock(64, 32),
             OptimizedConvBlock(32, 32),
-            ChannelReductionBlock(32)  # -> 8 channels
+    #        ChannelReductionBlock(32)  # -> 8 channels
         )
         
         self.up3 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(8, 16),
+            OptimizedConvBlock(32, 16),
             OptimizedConvBlock(16, 16),
-            ChannelReductionBlock(16)   # -> 4 channels
+    #        ChannelReductionBlock(16)   # -> 4 channels
         )
         
         self.up4 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(4, 8),
-            OptimizedConvBlock(8, 4)   # Keep at 4 channels before final conv
+            OptimizedConvBlock(16, 4),
+     #       OptimizedConvBlock(4, 4)   # Keep at 4 channels before final conv
         )
         
         # Final convolution
@@ -135,7 +135,7 @@ class GroupedLatentDecoder(nn.Module):
         self.output_shape = output_shape
         
         # Initial target shape after first upsampling
-        self.initial_shape = (output_shape[0]//8, output_shape[1]//8, output_shape[2]//8)  # (8, 16, 16)
+        self.initial_shape = (output_shape[0]//16, output_shape[1]//16, output_shape[2]//16)  # (8, 16, 16)
         
         # Reshape and upsample to initial shape
         self.reshape_upsample = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
@@ -149,7 +149,7 @@ class GroupedLatentDecoder(nn.Module):
         )
         
         # 1x1 convolution to mix channels
-        self.channel_mixer = nn.Conv3d(latent_dim, 32, kernel_size=1)
+        self.channel_mixer = nn.Conv3d(latent_dim, 128, kernel_size=1)
         
         # Activation
         self.activation = nn.ReLU(inplace=True)
@@ -157,18 +157,23 @@ class GroupedLatentDecoder(nn.Module):
         # Remaining upsampling path
         self.up1 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(32, 16)
+            OptimizedConvBlock(128, 64)
         )
         
         self.up2 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(16, 8)
+            OptimizedConvBlock(64, 32)
         )
         
         self.up3 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            OptimizedConvBlock(8, 4)
+            OptimizedConvBlock(32, 16)
         )
+        
+        self.up4 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            OptimizedConvBlock(16, 4)
+        )        
         
         # Final convolution
         self.final_conv = nn.Conv3d(4, output_channels, kernel_size=1)
@@ -178,16 +183,16 @@ class GroupedLatentDecoder(nn.Module):
         batch_size = x.size(0)
         
         # Check if input is already in 5D format or needs flattening
-        if len(x.shape) == 5:  # Already in format [B, C, D, H, W]
-            # Just ensure the channel dimension is correct
-            if x.size(1) != self.latent_dim:
-                raise ValueError(f"Expected {self.latent_dim} channels in input, got {x.size(1)}")
+        # if len(x.shape) == 5:  # Already in format [B, C, D, H, W]
+        #     # Just ensure the channel dimension is correct
+        #     if x.size(1) != self.latent_dim:
+        #         raise ValueError(f"Expected {self.latent_dim} channels in input, got {x.size(1)}")
             
-            # Flatten spatial dimensions
-            x = x.flatten(2).mean(dim=2).view(batch_size, self.latent_dim, 1, 1, 1)
-        else:
-            # Reshape to (batch_size, latent_dim, 1, 1, 1)
-            x = x.view(batch_size, self.latent_dim, 1, 1, 1)
+        #     # Flatten spatial dimensions
+        x = x.flatten(2).mean(dim=2).view(batch_size, self.latent_dim, 1, 1, 1)
+        # else:
+        #     # Reshape to (batch_size, latent_dim, 1, 1, 1)
+          #   x = x.view(batch_size, self.latent_dim, 1, 1, 1)
         
         # Upsample to initial shape
         x = self.reshape_upsample(x)
@@ -205,6 +210,7 @@ class GroupedLatentDecoder(nn.Module):
         x = self.up1(x)
         x = self.up2(x)
         x = self.up3(x)
+        x = self.up4(x)
         x = self.final_conv(x)
         
         return x
@@ -219,7 +225,7 @@ class OptimizedAutoencoder(nn.Module):
     def __init__(self, initial_filters=4):
         super().__init__()
         self.encoder = OptimizedEncoder(initial_filters=initial_filters)
-        self.decoder = LatentSpaceDecoder(latent_dim=512)  # 512 is output from encoder's down4
+        self.decoder = LatentSpaceDecoder(latent_dim=128)  # 512 is output from encoder's down4
         
     def forward(self, x):
         encoded = self.encoder(x)
@@ -237,7 +243,7 @@ class GroupedConvAutoencoder(nn.Module):
     def __init__(self, initial_filters=4, output_shape=(64, 128, 128)):
         super().__init__()
         self.encoder = OptimizedEncoder(initial_filters=initial_filters)
-        self.decoder = GroupedLatentDecoder(latent_dim=512, output_shape=output_shape)
+        self.decoder = GroupedLatentDecoder(latent_dim=128, output_shape=output_shape)
         
     def forward(self, x):
         encoded = self.encoder(x)

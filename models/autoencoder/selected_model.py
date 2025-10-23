@@ -564,4 +564,67 @@ class BottleneckDeconvDecoderFixed(nn.Module):
         return self.final_conv(x)
 
 
+class BottleneckHybridDecoderFixed(nn.Module):
+    """Fixed hybrid decoder with proper normalization"""
+    def __init__(
+        self,
+        latent_dim=128,
+        initial_shape=(4, 8, 8),
+        target_shape=(64, 128, 128),
+        mid_channels=64,
+        output_channels=1,
+    ):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.initial_shape = initial_shape
+        self.target_shape = target_shape
+        self.reshape = nn.Upsample(size=initial_shape, mode='trilinear', align_corners=False)
+        
+        # Small depthwise kernel
+        self.grouped_conv = nn.Conv3d(latent_dim, latent_dim, kernel_size=3, padding=1, groups=latent_dim)
+        self.bn1 = nn.BatchNorm3d(latent_dim)  # ✓ ADD THIS
+        self.act1 = nn.ReLU(inplace=True)
+        
+        # Channel mixer
+        self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1)
+        self.bn2 = nn.BatchNorm3d(mid_channels)  # ✓ ADD THIS
+        self.act2 = nn.ReLU(inplace=True)
+        
+        # Small deconv
+        self.small_deconv = nn.ConvTranspose3d(mid_channels, mid_channels, kernel_size=2, stride=1)
+        self.bn3 = nn.BatchNorm3d(mid_channels)  # ✓ ADD THIS
+        self.act3 = nn.ReLU(inplace=True)
+        
+        # Ladder
+        ladder_shapes = _compute_ladder_shapes(initial_shape, target_shape)
+        ladder_channels = [mid_channels, 32, 16, 8, 4]
+        self.ladder = nn.ModuleList()
+        in_channels = ladder_channels[0]
+        
+        for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
+            self.ladder.append(nn.Sequential(
+                nn.Upsample(size=target, mode='trilinear', align_corners=False),
+                BaseConvBlock(in_channels, out_channels),
+            ))
+            in_channels = out_channels
+        
+        self.final_conv = nn.Conv3d(in_channels, output_channels, kernel_size=1)
+    
+    def forward(self, x):
+        b = x.size(0)
+        x = x.view(b, self.latent_dim, x.shape[2], x.shape[3], x.shape[4])
+        x = self.reshape(x)
+        x = self.grouped_conv(x)
+        x = self.bn1(x)
+        x = self.act1(x)
+        x = self.mixer(x)
+        x = self.bn2(x)
+        x = self.act2(x)
+        x = self.small_deconv(x)
+        x = self.bn3(x)
+        x = self.act3(x)
+        for stage in self.ladder:
+            x = stage(x)
+        return self.final_conv(x)
+
 

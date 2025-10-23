@@ -436,3 +436,132 @@ class BottleneckAE(nn.Module):
     def forward(self, x):
         z = self.encoder(x)
         return self.decoder(z)
+
+
+class BottleneckBasisDecoderFixed(nn.Module):
+    """Fixed basis decoder with reasonable kernel sizes"""
+    def __init__(
+        self,
+        latent_dim=128,
+        initial_shape=(4, 8, 8),
+        target_shape=(64, 128, 128),
+        mid_channels=64,
+        output_channels=1,
+        groups='full',
+    ):
+        super().__init__()
+        self.latent_dim = latent_dim
+        self.initial_shape = initial_shape
+        self.target_shape = target_shape
+        
+        # Upsample from bottleneck to initial_shape
+        self.reshape = nn.Upsample(size=initial_shape, mode='trilinear', align_corners=False)
+        
+        # Group settings
+        if groups == 'full':
+            group_count = latent_dim
+        elif groups == 'none':
+            group_count = 1
+        elif groups == 'partial':
+            group_count = max(1, latent_dim // 4)
+        elif isinstance(groups, int):
+            group_count = groups
+        else:
+            raise ValueError(f"Unsupported groups spec: {groups}")
+        
+        # FIX: Use 3x3x3 depthwise conv instead of full spatial kernel
+        self.grouped_conv = nn.Conv3d(
+            latent_dim,
+            latent_dim,
+            kernel_size=3,  # Fixed: reasonable kernel size
+            groups=group_count,
+            padding=1,
+            bias=True,
+        )
+        
+        # Add batch norm and activation after grouped conv
+        self.bn = nn.BatchNorm3d(latent_dim)
+        
+        # Channel mixer
+        self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1)
+        self.act = nn.ReLU(inplace=True)
+        
+        # Decoder ladder
+        ladder_shapes = _compute_ladder_shapes(initial_shape, target_shape)
+        ladder_channels = [mid_channels, 32, 16, 8, 4]
+        self.ladder = nn.ModuleList()
+        in_channels = ladder_channels[0]
+        
+        for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
+            self.ladder.append(nn.Sequential(
+                nn.Upsample(size=target, mode='trilinear', align_corners=False),
+                BaseConvBlock(in_channels, out_channels),
+            ))
+            in_channels = out_channels
+        
+        self.final_conv = nn.Conv3d(in_channels, output_channels, kernel_size=1)
+
+    def forward(self, x):
+        b = x.size(0)
+        x = x.view(b, self.latent_dim, x.shape[2], x.shape[3], x.shape[4])
+        x = self.reshape(x)
+        x = self.grouped_conv(x)
+        x = self.bn(x)
+        x = self.act(x)
+        x = self.mixer(x)
+        x = self.act(x)
+        for stage in self.ladder:
+            x = stage(x)
+        return self.final_conv(x)
+
+
+class BottleneckDeconvDecoderFixed(nn.Module):
+    """Fixed deconv decoder with progressive upsampling"""
+    def __init__(
+        self,
+        latent_dim=128,
+        initial_shape=(4, 8, 8),
+        target_shape=(64, 128, 128),
+        mid_channels=64,
+        output_channels=1,
+    ):
+        super().__init__()
+        self.initial_shape = initial_shape
+        self.target_shape = target_shape
+        
+        # FIX: Use smaller deconv with stride instead of huge kernel
+        self.deconv1 = nn.ConvTranspose3d(latent_dim, mid_channels, kernel_size=4, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm3d(mid_channels)
+        self.act = nn.ReLU(inplace=True)
+        
+        # Additional conv to refine
+        self.refine = BaseConvBlock(mid_channels, mid_channels)
+        
+        # Decoder ladder
+        ladder_shapes = _compute_ladder_shapes(initial_shape, target_shape)
+        ladder_channels = [mid_channels, 32, 16, 8, 4]
+        self.ladder = nn.ModuleList()
+        in_channels = ladder_channels[0]
+        
+        for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
+            self.ladder.append(nn.Sequential(
+                nn.Upsample(size=target, mode='trilinear', align_corners=False),
+                BaseConvBlock(in_channels, out_channels),
+            ))
+            in_channels = out_channels
+        
+        self.final_conv = nn.Conv3d(in_channels, output_channels, kernel_size=1)
+    
+    def forward(self, x):
+        b = x.size(0)
+        x = x.view(b, x.size(1), x.shape[2], x.shape[3], x.shape[4])
+        x = self.deconv1(x)
+        x = self.bn1(x)
+        x = self.act(x)
+        x = self.refine(x)
+        for stage in self.ladder:
+            x = stage(x)
+        return self.final_conv(x)
+
+
+

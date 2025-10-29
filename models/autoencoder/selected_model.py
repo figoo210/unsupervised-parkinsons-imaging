@@ -190,18 +190,28 @@ class BottleneckDecoder(nn.Module):
         latent_dim=128,
         output_shape=(64, 128, 128),
         bottleneck_shape=(1, 1, 1),
+        base_patch_shape=None,
         output_channels=1,
         groups=None,
     ):
         super().__init__()
         self.latent_dim = latent_dim
         self.output_shape = output_shape
-        self.initial_shape = bottleneck_shape
+        self.bottleneck_shape = bottleneck_shape
+
+        # Determine the initial spatial support used after the latent (basis patch).
+        # Default to output_shape // 16 (4 decoder stages of x2 upsampling).
+        stages = 4
+        if base_patch_shape is None:
+            self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in self.output_shape)
+        else:
+            self.initial_shape = tuple(base_patch_shape)
+
         group_count = latent_dim if groups is None else groups
 
-        # Reshape latent vector back into spatial support.
+        # Reshape latent vector back into spatial support (e.g., 1x1x1 -> 4x8x8).
         self.reshape_upsample = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
-        # Depthwise convolution: one `(4×8×8)` filter per latent channel (no cross-talk yet).
+        # Depthwise convolution: one `(initial_shape)` filter per latent channel (no cross-talk yet).
         self.grouped_conv = nn.Conv3d(
             latent_dim,
             latent_dim,
@@ -251,7 +261,7 @@ class BottleneckBasisDecoder(nn.Module):
     def __init__(
         self,
         latent_dim=128,
-        initial_shape=(4, 8, 8),
+        initial_shape=None,
         target_shape=(64, 128, 128),
         mid_channels=64,
         output_channels=1,
@@ -259,9 +269,13 @@ class BottleneckBasisDecoder(nn.Module):
     ):
         super().__init__()
         self.latent_dim = latent_dim
-        self.initial_shape = initial_shape
         self.target_shape = target_shape
-        self.reshape = nn.Upsample(size=initial_shape, mode='trilinear', align_corners=False)
+        stages = 4
+        if initial_shape is None:
+            self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in target_shape)
+        else:
+            self.initial_shape = initial_shape
+        self.reshape = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
         if groups == 'full':
             group_count = latent_dim
         elif groups == 'none':
@@ -277,18 +291,18 @@ class BottleneckBasisDecoder(nn.Module):
         self.grouped_conv = nn.Conv3d(
             latent_dim,
             latent_dim,
-            kernel_size=initial_shape,
+            kernel_size=self.initial_shape,
             groups=group_count,
             padding='same',
             bias=True,
         )
         self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1)
         self.act = nn.ReLU(inplace=True)
-        ladder_shapes = _compute_ladder_shapes(initial_shape, target_shape)
+        ladder_shapes = _compute_ladder_shapes(self.initial_shape, target_shape)
         ladder_channels = [mid_channels, 32, 16, 8, 4]
         self.ladder = nn.ModuleList()
         in_channels = ladder_channels[0]
-        current_shape = initial_shape
+        current_shape = self.initial_shape
         for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
             self.ladder.append(nn.Sequential(
                 nn.Upsample(size=target, mode='trilinear', align_corners=False),
@@ -317,21 +331,25 @@ class BottleneckDeconvDecoder(nn.Module):
     def __init__(
         self,
         latent_dim=128,
-        initial_shape=(4, 8, 8),
+        initial_shape=None,
         target_shape=(64, 128, 128),
         mid_channels=64,
         output_channels=1,
     ):
         super().__init__()
-        self.initial_shape = initial_shape
         self.target_shape = target_shape
-        self.deconv = nn.ConvTranspose3d(latent_dim, mid_channels, kernel_size=initial_shape)
+        stages = 4
+        if initial_shape is None:
+            self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in target_shape)
+        else:
+            self.initial_shape = initial_shape
+        self.deconv = nn.ConvTranspose3d(latent_dim, mid_channels, kernel_size=self.initial_shape)
         self.act = nn.ReLU(inplace=True)
-        ladder_shapes = _compute_ladder_shapes(initial_shape, target_shape)
+        ladder_shapes = _compute_ladder_shapes(self.initial_shape, target_shape)
         ladder_channels = [mid_channels, 32, 16, 8, 4]
         self.ladder = nn.ModuleList()
         in_channels = ladder_channels[0]
-        current_shape = initial_shape
+        current_shape = self.initial_shape
         for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
             self.ladder.append(nn.Sequential(
                 nn.Upsample(size=target, mode='trilinear', align_corners=False),
@@ -355,16 +373,20 @@ class BottleneckHybridDecoder(nn.Module):
     def __init__(
         self,
         latent_dim=128,
-        initial_shape=(4, 8, 8),
+        initial_shape=None,
         target_shape=(64, 128, 128),
         mid_channels=64,
         output_channels=1,
     ):
         super().__init__()
         self.latent_dim = latent_dim
-        self.initial_shape = initial_shape
         self.target_shape = target_shape
-        self.reshape = nn.Upsample(size=initial_shape, mode='trilinear', align_corners=False)
+        stages = 4
+        if initial_shape is None:
+            self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in target_shape)
+        else:
+            self.initial_shape = initial_shape
+        self.reshape = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
         # small depthwise kernel to capture local patterns
         self.grouped_conv = nn.Conv3d(latent_dim, latent_dim, kernel_size=3, padding=1, groups=latent_dim)
         self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1)
@@ -372,11 +394,11 @@ class BottleneckHybridDecoder(nn.Module):
         self.small_deconv = nn.ConvTranspose3d(mid_channels, mid_channels, kernel_size=2, stride=1)
         self.act = nn.ReLU(inplace=True)
         # ladder
-        ladder_shapes = _compute_ladder_shapes(initial_shape, target_shape)
+        ladder_shapes = _compute_ladder_shapes(self.initial_shape, target_shape)
         ladder_channels = [mid_channels, 32, 16, 8, 4]
         self.ladder = nn.ModuleList()
         in_channels = ladder_channels[0]
-        current_shape = initial_shape
+        current_shape = self.initial_shape
         for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
             self.ladder.append(nn.Sequential(
                 nn.Upsample(size=target, mode='trilinear', align_corners=False),

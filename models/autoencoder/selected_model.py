@@ -119,7 +119,8 @@ class BottleneckEncoder(nn.Module):
         super().__init__()
         self.backbone = BaseEncoder(initial_filters=initial_filters)
         # Adaptive pooling guarantees `(B, latent_dim, 1, 1, 1)` regardless of input size tweaks.
-        self.global_pool = nn.AdaptiveAvgPool3d(bottleneck_shape)
+        # self.global_pool = nn.AdaptiveAvgPool3d(bottleneck_shape)
+        self.global_pool = nn.Conv3d(128, latent_dim, kernel_size=(4,8,8), padding=0)
         self.latent_dim = latent_dim
         # 1x1 conv to project channel count to latent_dim if needed
         self.project = nn.Conv3d(128, latent_dim, kernel_size=1) if latent_dim != 128 else None

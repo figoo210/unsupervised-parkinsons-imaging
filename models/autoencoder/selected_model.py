@@ -211,6 +211,7 @@ class BottleneckBasisDecoder(nn.Module):
             group_count = groups
         else:
             raise ValueError(f"Unsupported groups spec: {groups}")
+        self.groups = groups
         # depthwise kernel spans the full initial_shape -> each latent maps to one basis patch
         self.grouped_conv = nn.Conv3d(
             latent_dim,
@@ -220,7 +221,8 @@ class BottleneckBasisDecoder(nn.Module):
             padding='same',
             bias=True,
         )
-        self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1)
+        # Skip mixer if groups == 'none' (grouped_conv is already a full channel mixer)
+        self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1) if groups != 'none' else None
         self.act = nn.ReLU(inplace=True)
         ladder_shapes = _compute_ladder_shapes(self.initial_shape, target_shape)
         ladder_channels = [mid_channels, 32, 16, 8, 4]
@@ -243,7 +245,8 @@ class BottleneckBasisDecoder(nn.Module):
         x = self.reshape(x)         # -> (B, latent_dim, D,H,W) with D,H,W == initial_shape
         # grouped_conv uses kernel == current spatial size; ensure kernel and input shape match
         x = self.grouped_conv(x)
-        x = self.mixer(x)
+        if self.mixer is not None:
+            x = self.mixer(x)
         x = self.act(x)
         for stage in self.ladder:
             x = stage(x)
@@ -283,8 +286,8 @@ class BottleneckDeconvDecoder(nn.Module):
             current_shape = target
         self.final_conv = nn.Conv3d(in_channels, output_channels, kernel_size=1)
     def forward(self, x):
-        b = x.size(0)
-        x = x.view(b, x.size(1), x.shape[2], x.shape[3], x.shape[4])  # usually (B, latent_dim, 1,1,1)
+        # b = x.size(0)
+        # x = x.view(b, x.size(1), x.shape[2], x.shape[3], x.shape[4])  # usually (B, latent_dim, 1,1,1)
         x = self.deconv(x)
         x = self.act(x)
         for stage in self.ladder:

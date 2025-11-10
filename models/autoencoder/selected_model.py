@@ -179,83 +179,6 @@ class BaseDecoder(nn.Module):
         return x
 
 
-class BottleneckDecoder(nn.Module):
-    """Grouped-convolution bottleneck decoder matching the notebook design.
-
-    Pipeline mirrors the described steps:
-    latent tensor → spatial squeeze → upsample to `(4, 8, 8)` → depthwise conv to
-    learn channel-wise basis volumes → 1×1 mix → standard upsampling ladder.
-    """
-    def __init__(
-        self,
-        latent_dim=128,
-        output_shape=(64, 128, 128),
-        bottleneck_shape=(1, 1, 1),
-        base_patch_shape=None,
-        output_channels=1,
-        groups=None,
-    ):
-        super().__init__()
-        self.latent_dim = latent_dim
-        self.output_shape = output_shape
-        self.bottleneck_shape = bottleneck_shape
-
-        # Determine the initial spatial support used after the latent (basis patch).
-        # Default to output_shape // 16 (4 decoder stages of x2 upsampling).
-        stages = 4
-        if base_patch_shape is None:
-            self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in self.output_shape)
-        else:
-            self.initial_shape = tuple(base_patch_shape)
-
-        group_count = latent_dim if groups is None else groups
-
-        # Reshape latent vector back into spatial support (e.g., 1x1x1 -> 4x8x8).
-        self.reshape_upsample = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
-        # Depthwise convolution: one `(initial_shape)` filter per latent channel (no cross-talk yet).
-        self.grouped_conv = nn.Conv3d(
-            latent_dim,
-            latent_dim,
-            kernel_size=self.initial_shape,
-            padding='same',
-            groups=group_count,
-        )
-        # Mix latent channels so the depthwise bases can interact before the decoder ladder.
-        self.channel_mixer = nn.Conv3d(latent_dim, latent_dim, kernel_size=1)
-        self.activation = nn.ReLU(inplace=True)
-
-        ladder_shapes = _compute_ladder_shapes(self.initial_shape, self.output_shape)
-        ladder_channels = [latent_dim, 64, 32, 16, 4]
-        self.ladder = nn.ModuleList()
-        in_channels = ladder_channels[0]
-        current_shape = self.initial_shape
-        for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
-            self.ladder.append(nn.Sequential(
-                nn.Upsample(size=target, mode='trilinear', align_corners=False),
-                BaseConvBlock(in_channels, out_channels),
-            ))
-            in_channels = out_channels
-            current_shape = target
-
-        self.final_conv = nn.Conv3d(in_channels, output_channels, kernel_size=1)
-
-    def forward(self, x):
-        # The input x is already the latent vector of shape (B, latent_dim, 1, 1, 1).
-        # Expand to `(4, 8, 8)` so grouped conv can paint basis images.
-        x = self.reshape_upsample(x)
-        # Apply depthwise filters: each channel learns its own base patch.
-        x = self.grouped_conv(x)
-        # Channel mixer lets bases combine before the decoder stack.
-        x = self.channel_mixer(x)
-        x = self.activation(x)
-        # Run through the symmetric decoder path.
-        for stage in self.ladder:
-            x = stage(x)
-        # Final projection back to image space.
-        x = self.final_conv(x)
-        return x
-
-
 class BottleneckBasisDecoder(nn.Module):
     """Your basis decoder: upsample latent vector to initial spatial size, depthwise conv (kernel==spatial),
        1x1 channel mixing, then ladder."""
@@ -315,8 +238,8 @@ class BottleneckBasisDecoder(nn.Module):
 
     def forward(self, x):
         # x shape: (B, latent_dim, bz, by, bx) -- e.g., (B, latent_dim, 1,1,1)
-        b = x.size(0)
-        x = x.view(b, self.latent_dim, x.shape[2], x.shape[3], x.shape[4]) # why do we need those 2 lines!
+        # b = x.size(0)
+        # x = x.view(b, self.latent_dim, x.shape[2], x.shape[3], x.shape[4]) # why do we need those 2 lines!
         x = self.reshape(x)         # -> (B, latent_dim, D,H,W) with D,H,W == initial_shape
         # grouped_conv uses kernel == current spatial size; ensure kernel and input shape match
         x = self.grouped_conv(x)

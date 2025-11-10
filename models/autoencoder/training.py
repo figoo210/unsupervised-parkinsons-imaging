@@ -51,6 +51,8 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
     val_losses = []
     best_val_loss = float('inf')
     start_time = time.time()
+    avg_train_loss = 0.0
+    avg_val_loss = 0.0
 
     # Load checkpoint if available
     start_epoch = 0
@@ -205,19 +207,7 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                 is_best = avg_val_loss < best_val_loss
                 if is_best:
                     best_val_loss = avg_val_loss
-            except Exception as e:
-                print(f"DEBUG: Error during epoch {epoch+1}: {str(e)}")
-                import traceback
-                traceback.print_exc()
                 
-                # Make sure to close progress bars in case of exception
-                if 'train_pbar' in locals():
-                    train_pbar.close()
-                if 'val_pbar' in locals():
-                    val_pbar.close()
-
-            # Outside of the try block for each epoch
-            try:
                 # Save checkpoint
                 if (epoch + 1) % config.save_interval == 0 or is_best or (epoch + 1 == config.epochs):
                     checkpoint_handler.save(
@@ -235,24 +225,27 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                 print(f"Epoch {epoch+1}/{config.epochs} | Train: {avg_train_loss:.6f} | Val: {avg_val_loss:.6f} | LR: {optimizer.param_groups[0]['lr']:.8f} | ETA: {est_time_left/60:.2f}m")
                 
                 try:
-                    print("DEBUG: About to call print_memory_stats()")
                     print_memory_stats()
-                    print("DEBUG: Successfully called print_memory_stats()")
                 except Exception as e:
                     print(f"DEBUG: Error in print_memory_stats(): {str(e)}")
                     # Continue training even if memory stats fail
                 
                 # Early stopping check
-                print("DEBUG: Checking early stopping criteria")
                 if early_stopping(avg_val_loss, epoch):
                     if early_stopping.early_stop:
                         print("\nEarly stopping triggered!")
                         break
-                print(f"DEBUG: Completed epoch {epoch+1}/{config.epochs}, continuing to next epoch")
+                        
             except Exception as e:
-                print(f"DEBUG: Error after epoch training/validation: {str(e)}")
+                print(f"DEBUG: Error during epoch {epoch+1}: {str(e)}")
                 import traceback
                 traceback.print_exc()
+                
+                # Make sure to close progress bars in case of exception
+                if 'train_pbar' in locals():
+                    train_pbar.close()
+                if 'val_pbar' in locals():
+                    val_pbar.close()
 
     except KeyboardInterrupt:
         print("\nTraining interrupted by user!")

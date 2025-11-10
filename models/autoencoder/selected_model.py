@@ -118,20 +118,15 @@ class BottleneckEncoder(nn.Module):
     def __init__(self, initial_filters=4, latent_dim=128, bottleneck_shape=(1,1,1)):
         super().__init__()
         self.backbone = BaseEncoder(initial_filters=initial_filters)
-        # Adaptive pooling guarantees `(B, latent_dim, 1, 1, 1)` regardless of input size tweaks.
-        # self.global_pool = nn.AdaptiveAvgPool3d(bottleneck_shape)
+        # Conv3d projects from 128 channels to latent_dim while collapsing spatial dims
         self.global_pool = nn.Conv3d(128, latent_dim, kernel_size=(4,8,8), padding=0)
         self.latent_dim = latent_dim
-        # 1x1 conv to project channel count to latent_dim if needed
-        self.project = nn.Conv3d(128, latent_dim, kernel_size=1) if latent_dim != 128 else None
 
     def forward(self, x):
         # Extract feature volume using the shared backbone.
         x = self.backbone(x)
-        # Collapse spatial dimensions to build the latent vector.
-        x = self.global_pool(x)
-        if self.project is not None:
-            x = self.project(x)                      # -> (B, latent_dim, bz, by, bx)
+        # Collapse spatial dimensions and project to latent_dim
+        x = self.global_pool(x)  # -> (B, latent_dim, 1, 1, 1)
         return x
 
 

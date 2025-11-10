@@ -276,7 +276,7 @@ class BottleneckBasisDecoder(nn.Module):
             self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in target_shape)
         else:
             self.initial_shape = initial_shape
-        self.reshape = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False)
+        self.reshape = nn.Upsample(size=self.initial_shape, mode='trilinear', align_corners=False) # we should use the nearest model
         if groups == 'full':
             group_count = latent_dim
         elif groups == 'none':
@@ -316,7 +316,7 @@ class BottleneckBasisDecoder(nn.Module):
     def forward(self, x):
         # x shape: (B, latent_dim, bz, by, bx) -- e.g., (B, latent_dim, 1,1,1)
         b = x.size(0)
-        x = x.view(b, self.latent_dim, x.shape[2], x.shape[3], x.shape[4])
+        x = x.view(b, self.latent_dim, x.shape[2], x.shape[3], x.shape[4]) # why do we need those 2 lines!
         x = self.reshape(x)         # -> (B, latent_dim, D,H,W) with D,H,W == initial_shape
         # grouped_conv uses kernel == current spatial size; ensure kernel and input shape match
         x = self.grouped_conv(x)

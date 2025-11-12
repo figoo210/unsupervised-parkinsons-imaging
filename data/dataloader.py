@@ -171,7 +171,7 @@ class BatchLoadDataset(Dataset):
             }
 
 
-def create_dataloaders(df, batch_size=4, train_split=0.8, on_demand=False, mask_path='rmask_ICV.nii'):
+def create_dataloaders(df, batch_size=4, train_split=0.8, on_demand=False, num_workers=2, mask_path='rmask_ICV.nii'):
     """Create train and validation dataloaders with stratified split"""
     # Stratified split to maintain group distributions
     train_df, val_df = train_test_split(
@@ -201,7 +201,7 @@ def create_dataloaders(df, batch_size=4, train_split=0.8, on_demand=False, mask_
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=2,  # Reduced from 6 to prevent hanging
+        num_workers=num_workers,  # Reduced from 6 to prevent hanging
         pin_memory=True,
         persistent_workers=False  # Changed from True to avoid memory issues
     )
@@ -210,7 +210,7 @@ def create_dataloaders(df, batch_size=4, train_split=0.8, on_demand=False, mask_
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=2,  # Reduced from 6 to prevent hanging
+        num_workers=num_workers,  # Reduced from 6 to prevent hanging
         pin_memory=True,
         persistent_workers=False  # Changed from True to avoid memory issues
     )

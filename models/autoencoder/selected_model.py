@@ -216,14 +216,19 @@ class BottleneckBasisDecoder(nn.Module):
             padding='same',
             bias=True,
         )
-        # Skip mixer if groups == 'none' (grouped_conv is already a full channel mixer)
+        # Mixer only needed when groups != 'none'
         self.mixer = nn.Conv3d(latent_dim, mid_channels, kernel_size=1) if groups != 'none' else None
         self.act = nn.ReLU(inplace=True)
+        
+        # Adaptive ladder: when groups=='none', first stage accepts latent_dim; otherwise mid_channels
         ladder_shapes = _compute_ladder_shapes(self.initial_shape, target_shape)
         ladder_channels = [mid_channels, 32, 16, 8, 4]
         self.ladder = nn.ModuleList()
-        in_channels = ladder_channels[0]
+        
+        # First ladder stage input channels depend on whether mixer is used
+        in_channels = latent_dim if groups == 'none' else mid_channels
         current_shape = self.initial_shape
+        
         for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
             self.ladder.append(nn.Sequential(
                 nn.Upsample(size=target, mode='trilinear', align_corners=False),
@@ -351,7 +356,7 @@ class BaseModel(nn.Module):
         if use_bottleneck:
             # Latent vector pathway: compress spatial dims and decode via grouped bottleneck.
             self.encoder = BottleneckEncoder(initial_filters=initial_filters, latent_dim=latent_dim)
-            self.decoder = BottleneckDecoder(latent_dim=latent_dim)
+            self.decoder = BottleneckBasisDecoder(latent_dim=latent_dim)
         else:
             # Original autoencoder pathway: keep spatial latent map for the vanilla decoder.
             self.encoder = BaseEncoder(initial_filters=initial_filters)

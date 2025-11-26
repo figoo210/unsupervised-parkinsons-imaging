@@ -295,6 +295,50 @@ class BottleneckDeconvDecoder(nn.Module):
         return self.final_conv(x)
 
 
+class ComplexBottleneckDeconvDecoder(nn.Module):
+    """ConvTranspose3d variant: densly learn spatial expansion from the latent vector."""
+    def __init__(
+        self,
+        latent_dim=128,
+        initial_shape=None,
+        target_shape=(64, 128, 128),
+        mid_channels=64,
+        output_channels=1,
+    ):
+        super().__init__()
+        self.target_shape = target_shape
+        stages = 4
+        if initial_shape is None:
+            self.initial_shape = tuple(max(1, s // (2 ** stages)) for s in target_shape)
+        else:
+            self.initial_shape = initial_shape
+        self.deconv = nn.ConvTranspose3d(latent_dim, mid_channels, kernel_size=self.initial_shape)
+        self.act = nn.ReLU(inplace=True)
+        ladder_shapes = _compute_ladder_shapes(self.initial_shape, target_shape)
+        ladder_channels = [mid_channels, 32, 16, 8, 4]
+        self.ladder = nn.ModuleList()
+        in_channels = ladder_channels[0]
+        current_shape = self.initial_shape
+        for target, out_channels in zip(ladder_shapes, ladder_channels[1:]):
+            self.ladder.append(nn.Sequential(
+                nn.Upsample(size=target, mode='trilinear', align_corners=False),
+                BaseConvBlock(in_channels, out_channels),
+            ))
+            in_channels = out_channels
+            current_shape = target
+        self.refine_conv = BaseConvBlock(in_channels, in_channels)
+        self.final_conv = nn.Conv3d(in_channels, output_channels, kernel_size=1)
+    def forward(self, x):
+        # b = x.size(0)
+        # x = x.view(b, x.size(1), x.shape[2], x.shape[3], x.shape[4])  # usually (B, latent_dim, 1,1,1)
+        x = self.deconv(x)
+        x = self.act(x)
+        for stage in self.ladder:
+            x = stage(x)
+        x = self.refine_conv(x)
+        return self.final_conv(x)
+
+
 class BottleneckHybridDecoder(nn.Module):
     """Hybrid: depthwise with small kernel -> mixer -> small ConvTranspose -> ladder."""
     def __init__(

@@ -232,15 +232,17 @@ def train_autoencoder(model, train_loader, val_loader, config=None, disable_epoc
                 
                 # Early stopping check
                 if early_stopping(avg_val_loss, epoch):
-                    if early_stopping.early_stop:
-                        print("\nEarly stopping triggered!")
-                        break
+                    print("\nEarly stopping triggered!")
+                    break
                         
             except Exception as e:
                 print(f"DEBUG: Error during epoch {epoch+1}: {str(e)}")
                 import traceback
                 traceback.print_exc()
+                # Add a new line here to pause the training for 10 minutes
+                time.sleep(600)  # pause for 10 minutes
                 
+# ... (rest of the code remains the same)
                 # Make sure to close progress bars in case of exception
                 if 'train_pbar' in locals():
                     train_pbar.close()

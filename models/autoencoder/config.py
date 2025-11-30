@@ -128,7 +128,6 @@ class EarlyStopping:
         self.best_epoch = 0
         
     def __call__(self, val_loss, epoch):
-        print(f"DEBUG: EarlyStopping - Current val_loss: {val_loss:.6f}, Best loss: {self.best_loss:.6f}")
         if val_loss < self.best_loss - self.min_delta:
             if self.verbose:
                 improvement = self.best_loss - val_loss
@@ -136,19 +135,16 @@ class EarlyStopping:
             self.best_loss = val_loss
             self.counter = 0
             self.best_epoch = epoch
-            print(f"DEBUG: EarlyStopping - Loss improved, counter reset to {self.counter}")
-            return True  # Model improved
+            return False  # Don't stop
         else:
             self.counter += 1
             if self.verbose:
                 print(f"Early stopping counter: {self.counter}/{self.patience}")
-            print(f"DEBUG: EarlyStopping - No improvement, counter increased to {self.counter}/{self.patience}")
             if self.counter >= self.patience:
-                self.early_stop = True
                 if self.verbose:
                     print(f"Early stopping triggered. Best epoch was {self.best_epoch}.")
-                print(f"DEBUG: EarlyStopping - Patience exceeded, early_stop set to {self.early_stop}")
-            return False  # Model didn't improve
+                return True  # Stop training
+            return False
 
 
 class CheckpointHandler:

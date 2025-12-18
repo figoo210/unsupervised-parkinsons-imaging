@@ -1,0 +1,4 @@
+Target,Top_Feature,Top_Coefficient,Features_for_80pct,Features_for_90pct,Positive_Coefs,Negative_Coefs
+SBR_PC1,latent_93,-0.5651980022238642,123,162,137,119
+SBR_PC2,latent_25,0.11221810030335544,126,162,121,135
+SBR_PC3,latent_53,-0.09455840322013237,134,171,133,123

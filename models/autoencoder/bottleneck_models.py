@@ -185,3 +185,73 @@ class BottleneckAE(nn.Module):
     def forward(self, x):
         z = self.encoder(x)
         return self.decoder(z)
+
+
+class BottleneckVAE(nn.Module):
+    """Variational Bottleneck Autoencoder with reparameterization trick.
+    
+    Extends the bottleneck architecture with a probabilistic latent space.
+    The encoder outputs mu and log_var instead of a deterministic latent code.
+    """
+    def __init__(self, encoder, decoder, latent_dim=128):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.latent_dim = latent_dim
+        
+        # Project encoder output (latent_dim, 1, 1, 1) to mu and log_var
+        self.fc_mu = nn.Linear(latent_dim, latent_dim)
+        self.fc_log_var = nn.Linear(latent_dim, latent_dim)
+
+    def reparameterize(self, mu, log_var):
+        """Reparameterization trick to enable backpropagation through sampling."""
+        if self.training:
+            std = torch.exp(0.5 * log_var)
+            eps = torch.randn_like(std)
+            return mu + eps * std
+        return mu
+
+    def forward(self, x):
+        # Encode to bottleneck representation (B, latent_dim, 1, 1, 1)
+        bottleneck = self.encoder(x)
+        
+        # Flatten to (B, latent_dim)
+        flat = bottleneck.squeeze(-1).squeeze(-1).squeeze(-1)
+        
+        # Project to mu and log_var
+        mu = self.fc_mu(flat)
+        log_var = self.fc_log_var(flat)
+        
+        # Reparameterize
+        z = self.reparameterize(mu, log_var)
+        
+        # Reshape back to (B, latent_dim, 1, 1, 1) for decoder
+        z_reshaped = z.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        
+        # Decode
+        reconstruction = self.decoder(z_reshaped)
+        
+        return reconstruction, mu, log_var
+
+    def encode(self, x):
+        """Encode input to latent parameters without sampling."""
+        bottleneck = self.encoder(x)
+        flat = bottleneck.squeeze(-1).squeeze(-1).squeeze(-1)
+        mu = self.fc_mu(flat)
+        log_var = self.fc_log_var(flat)
+        return mu, log_var
+
+    def generate(self, z=None, num_samples=1):
+        """Generate samples from latent space or random samples."""
+        device = next(self.parameters()).device
+        
+        if z is None:
+            z = torch.randn(num_samples, self.latent_dim, device=device)
+        
+        # Reshape for decoder
+        z_reshaped = z.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        
+        with torch.no_grad():
+            samples = self.decoder(z_reshaped)
+        
+        return samples

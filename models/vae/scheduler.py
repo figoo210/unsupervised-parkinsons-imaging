@@ -7,6 +7,6 @@ def create_vae_scheduler(optimizer, config):
         optimizer, 
         mode='min',
         factor=0.5,
-        patience=5,
+        patience=4,
         min_lr=1e-6
     )
